@@ -6,6 +6,7 @@ __pycache__/
 .venv/
 venv/
 beam-env/
+*.env
 
 # Local pipeline outputs (real data lives in GCS)
 out/
