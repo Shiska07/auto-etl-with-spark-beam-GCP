@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+beam-env/
+
+# Local pipeline outputs (real data lives in GCS)
+out/
+output/
+*.parquet
+*.avro
+*.jsonl
+
+# Generated sample data (keep the generator script)
+sample_data/*.csv
+
+# Local Spark artifacts
+spark-warehouse/
+metastore_db/
+derby.log
+*.crc
+
+# Local Beam artifacts
+beam-temp-*/
+dataflow_staging/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Secrets
+*-key.json
+*credentials*.json
+service-account*.json
+.env
+*.local.env
+
+# Editor / OS
+.vscode/
+.idea/
+.theia/
+.DS_Store
