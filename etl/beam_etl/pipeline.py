@@ -19,12 +19,12 @@ from datetime import date
 
 import pyarrow as pa
 import apache_beam as beam
-from apache_beam.options.pipeline_options import PipelineOptions
+from apache_beam.options.pipeline_options import PipelineOptions, GoogleCloudOptions
 
 from beam_etl.transforms import CleanTrip, REJECTED
 
 
-SQL_FILE = Path(__file__).resolve().parent.parent / "sql_queries" / "02_load_table.sql"
+SQL_DIR = Path(__file__).resolve().parent.parent / "sql_queries" 
 
 # Schema or cleaned parquet file, must match schema returned by transforms.py CleanTrip(beam.Dofn)
 SILVER_SCHEMA = pa.schema([
@@ -61,6 +61,8 @@ def run(argv=None):
     parser.add_argument("--start_date", type=valid_date, required=True, help="YYYY-MM-DD, inclusive")
     parser.add_argument("--end_date", type=valid_date, required=True, help="YYYY-MM-DD, exclusive")
     parser.add_argument("--out_lake", required=True, help="Lake bucket, e.g. gs://<project>-lake")
+    parser.add_argument("--query_file", default="02_load_table.sql",
+                    help="SQL file name inside sql_queries/")
 
     # parse_known_args: our args go to `args`; everything else (--project, --runner, ...) goes to Beam
     args, beam_args = parser.parse_known_args(argv)
@@ -69,14 +71,23 @@ def run(argv=None):
     # load query
     if args.start_date >= args.end_date:
         parser.error("--start_date must be before --end_date")
-    query = SQL_FILE.read_text().format(start_date=args.start_date, end_date=args.end_date)
-    load_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    
+    query = (SQL_DIR / args.query_file).read_text().format(start_date=args.start_date, end_date=args.end_date)
+    load_date = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
 
     # bucket paths
-    silver_path = f"{args.out_lake}/silver/trips/load_date={load_date}"
-    rejects_path = f"{args.out_lake}/rejected/trips/load_date={load_date}"
+    run_id = run_id = f"{args.start_date}_{args.end_date}_{load_date}"
+    silver_dir = f"{args.out_lake}/silver/trips/run_id={run_id}"
+    rejects_dir = f"{args.out_lake}/rejected/trips/run_id={run_id}"
 
-    with beam.Pipeline(options=PipelineOptions(beam_args)) as p:
+    options=PipelineOptions(beam_args)
+
+    # add job name here (this is required for dataflow service)
+    gcp = options.view_as(GoogleCloudOptions)
+    if not gcp.job_name:
+        gcp.job_name = f"taxi-clean-{run_id.replace('_', '-')}"
+
+    with beam.Pipeline(options=options) as p:
 
         # load raw data
         raw = p | "ReadBigQuery" >> beam.io.ReadFromBigQuery(query=query, use_standard_sql=True)
@@ -94,7 +105,7 @@ def run(argv=None):
 
         # write clean data
         deduped | "WriteSilver" >> beam.io.WriteToParquet(
-            file_path_prefix=silver_path,
+            file_path_prefix=f"{silver_dir}/part",
             schema=SILVER_SCHEMA,
             file_name_suffix='.parquet'
         )
@@ -104,7 +115,7 @@ def run(argv=None):
             cleaned[REJECTED]
             | "RejectsToJson" >> beam.Map(json.dumps)
             | "WriteRejects" >> beam.io.WriteToText(
-                file_path_prefix=rejects_path,
+                file_path_prefix=f"{rejects_dir}/part",
                 file_name_suffix='.jsonl'
             )
         }
