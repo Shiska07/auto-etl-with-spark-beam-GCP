@@ -49,7 +49,7 @@ def validate(row):
     problems = []
 
     # try converting datetime
-    if to_naive_datetime(row.get("trip_stare_timestamp")) is None:
+    if to_naive_datetime(row.get("trip_start_timestamp")) is None:
         problems.append("missing_start_ts")
 
     seconds = to_float(row.get("trip_seconds"))
