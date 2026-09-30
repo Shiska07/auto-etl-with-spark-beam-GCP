@@ -1,4 +1,0 @@
-# Python packages needed to run this project
-# Install with: pip install -r requirements.txt
-
-apache-beam[gcp]  

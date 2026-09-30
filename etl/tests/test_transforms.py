@@ -66,6 +66,8 @@ def test_cash_trip_passes_validate(good_trip):
 
 # CleanTrip: runs inside a real (local) Beam pipeline
 def test_clean_trip_routes_rows_to_correct_outputs(good_trip):
+
+    # create 3 dummy trip rows with specific issues
     cash = {**good_trip, "unique_key": "trip_2", "payment_type": "Cash"}
     zero_seconds = {**good_trip, "unique_key": "trip_3", "trip_seconds": 0}
     no_fare = {**good_trip, "unique_key": "trip_4", "fare": None}

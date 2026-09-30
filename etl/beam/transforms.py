@@ -40,6 +40,9 @@ def to_naive_datetime(value):
 
 
 def validate(row):
+    """
+    Validates row of data for dtype, null values and returns a list of problems.
+    """
 
     # store list of problems for logging
     problems = []
@@ -70,55 +73,56 @@ def validate(row):
 
     return problems
 
-    class Cleantrip(beam.DoFn):
-        """
-        For each trip:
-        - not a credit card payment -> dropped (tips aren't recorded for cash)
-        - has data-quality problems -> sent to the REJECTED output
-        - otherwise                 -> clean, typed record on the main output
-        """
-        def __init__(self):
-            super().__init__()
-            self.valid = Metrics.counter("clean_trip", "valid_rows")
-            self.rejected = Metrics.counter("clean_trip", "rejected_rows")
-            self.filtered = Metrics.counter("clean_trip", "filtered_not_credit_card")
+class CleanTrip(beam.DoFn):
+    """
+    Beam DoFn object for cleaning trip data rows.
+    For each trip:
+    - not a credit card payment -> dropped (tips aren't recorded for cash)
+    - has data-quality problems -> sent to the REJECTED output
+    - otherwise                 -> clean, typed record on the main output
+    """
+    def __init__(self):
+        super().__init__()
+        self.valid = Metrics.counter("clean_trip", "valid_rows")
+        self.rejected = Metrics.counter("clean_trip", "rejected_rows")
+        self.filtered = Metrics.counter("clean_trip", "filtered_not_credit_card")
 
-        def process(self, row):
-            # Beam calls process() once for every element in the input PCollection.
+    def process(self, row):
+        # Beam calls process() once for every element in the input PCollection.
 
-            # silently drop non-card trips
-            if row.get("payment_type") != "Credit Card":
-                self.filtered.inc()  # increase counter
-                return  # no output for this row
+        # silently drop non-card trips
+        if row.get("payment_type") != "Credit Card":
+            self.filtered.inc()  # increase counter
+            return  # no output for this row
 
-            # Data-quality check: send bad rows to the rejected output
-            problems = validate(row)
-            if problems:
-                self.rejected.inc()  # increase counter
-                # yield (not return) emits an element and lets the DoFn keep running.
-                # TaggedOutput sends it to a named side output ("rejected") instead of the main one.
-                yield beam.pvalue.TaggedOutput(REJECTED, {
-                    "unique_key": row.get("unique_key"),
-                    "problems": problems,
-                    # str() so the raw row can be written as JSON later (datetimes aren't JSON)
-                    "raw": {k: None if v is None else str(v) for k, v in row.items()},
-                })
-                return 
+        # Data-quality check: send bad rows to the rejected output
+        problems = validate(row)
+        if problems:
+            self.rejected.inc()  # increase counter
+            # yield (not return) emits an element and lets the DoFn keep running.
+            # TaggedOutput sends it to a named side output ("rejected") instead of the main one.
+            yield beam.pvalue.TaggedOutput(REJECTED, {
+                "unique_key": row.get("unique_key"),
+                "problems": problems,
+                # str() so the raw row can be written as JSON later (datetimes aren't JSON)
+                "raw": {k: None if v is None else str(v) for k, v in row.items()},
+            })
+            return 
 
-            self.valid.inc()  # increase counter for valid rows
-            # A plain yield goes to the MAIN output (the "valid" stream)
-            yield {
-                "unique_key": row["unique_key"],
-                "taxi_id": row.get("taxi_id") or "unknown",
-                "trip_start_ts": to_naive_datetime(row["trip_start_timestamp"]),
-                "trip_seconds": to_int(row["trip_seconds"]),
-                "trip_miles": to_float(row["trip_miles"]),
-                "fare": to_float(row["fare"]),
-                "tips": to_float(row["tips"]),
-                "pickup_community_area": to_int(row["pickup_community_area"]),
-                "dropoff_community_area": to_int(row.get("dropoff_community_area")),
-                "tolls": to_float(row.get("tolls")) or 0.0,
-                "extras": to_float(row.get("extras")) or 0.0,
-                "company": (row.get("company") or "Unknown").strip(),
-            }
+        self.valid.inc()  # increase counter for valid rows
+        # A plain yield goes to the MAIN output (the "valid" stream)
+        yield {
+            "unique_key": row["unique_key"],
+            "taxi_id": row.get("taxi_id") or "unknown",
+            "trip_start_ts": to_naive_datetime(row["trip_start_timestamp"]),
+            "trip_seconds": to_int(row["trip_seconds"]),
+            "trip_miles": to_float(row["trip_miles"]),
+            "fare": to_float(row["fare"]),
+            "tips": to_float(row["tips"]),
+            "pickup_community_area": to_int(row["pickup_community_area"]),
+            "dropoff_community_area": to_int(row.get("dropoff_community_area")),
+            "tolls": to_float(row.get("tolls")) or 0.0,
+            "extras": to_float(row.get("extras")) or 0.0,
+            "company": (row.get("company") or "Unknown").strip(),
+        }
 
