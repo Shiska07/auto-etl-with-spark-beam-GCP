@@ -49,7 +49,7 @@ def validate(row):
     problems = []
 
     # try converting datetime
-    if to_naive_datetime(row.get("trip_stare_timestamp")) is not None:
+    if to_naive_datetime(row.get("trip_stare_timestamp")) is None:
         problems.append("missing_start_ts")
 
     seconds = to_float(row.get("trip_seconds"))
@@ -71,6 +71,8 @@ def validate(row):
     pickup = to_int(row.get("pickup_community_area"))
     if pickup is None or not (MIN_AREA <= pickup <= MAX_AREA):
         problems.append("bad_pickup_area")
+
+    
 
     return problems
 
