@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # set environment file source
-source "$(dirname "$0")/../config/dev.env"
+source "$(dirname "$0")/../../config/dev.env"
 gcloud config set project $PROJECT_ID
 
 # Create the service account if it doesn't exist yet
