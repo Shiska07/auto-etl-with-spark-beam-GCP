@@ -74,6 +74,10 @@ def test_clean_trip_routes_rows_to_correct_outputs(good_trip):
 
     with TestPipeline() as p:
 
+        # Run CleanTrip on every row. CleanTrip Process() output into two PCollections:
+        #   - with_outputs(REJECTED, ...) collects rows yielded as TaggedOutput(REJECTED)
+        #   - main="valid" names the untagged output i.e. clean rows so we can use results.valid
+        # Access them afterwards as results.valid and results[REJECTED] (or results.rejected).
         results = (
             p
             | beam.Create([good_trip, cash, zero_seconds, no_fare])

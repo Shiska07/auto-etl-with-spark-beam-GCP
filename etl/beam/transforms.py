@@ -1,5 +1,6 @@
 from datetime import datetime
-from apache_beam.metrics import metrics
+import apache_beam as beam
+from apache_beam.metrics import Metrics
 
 # name of second output for bad records
 REJECTED = "rejected"
