@@ -1,4 +1,8 @@
 # Python packages needed to run this project
 # Install with: pip install -r requirements.txt
 
-apache-beam[gcp]  
+apache-beam==2.76.0
+numpy==2.4.6
+pandas==3.0.6
+pyspark==4.2.0
+pytest==9.1.1
