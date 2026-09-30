@@ -6,7 +6,7 @@ set -euo pipefail
 
 # Load PROJECT_ID, REGION, LAKE, CODE, TEMP from the shared config file.
 # The path is relative to this script, so it works from any folder.
-source "$(dirname "$0")/../../config/dev.env"
+source "$(dirname "$0")/../config/dev.env"
 
 # Point gcloud at the right project, in case Cloud Shell is set to another one.
 gcloud config set project "$PROJECT_ID"
@@ -31,3 +31,27 @@ for BUCKET in "$LAKE" "$CODE" "$TEMP"; do
     # (no per-object ACLs). This is Google's recommended default.
     gcloud storage buckets create "$BUCKET" \
       --location="$REGION" \
+      --uniform-bucket-level-access
+    echo "    created: $BUCKET"
+  fi
+done
+
+echo ">>> Enabling versioning on the lake bucket..."
+# If a job overwrites or deletes data by mistake, older versions are kept.
+gcloud storage buckets update "$LAKE" --versioning
+
+echo ">>> Adding a 7-day auto-delete rule to the temp bucket..."
+# Dataflow and Dataproc leave staging files behind. This cleans them up automatically.
+LIFECYCLE_FILE=$(mktemp)
+cat > "$LIFECYCLE_FILE" <<'EOF'
+{
+  "rule": [
+    { "action": { "type": "Delete" }, "condition": { "age": 7 } }
+  ]
+}
+EOF
+gcloud storage buckets update "$TEMP" --lifecycle-file="$LIFECYCLE_FILE"
+rm -f "$LIFECYCLE_FILE"
+
+echo ">>> Done. Buckets in this project:"
+gcloud storage ls

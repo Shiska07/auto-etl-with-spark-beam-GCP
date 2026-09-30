@@ -80,7 +80,7 @@ def test_clean_trip_routes_rows_to_correct_outputs(good_trip):
         # Access them afterwards as results.valid and results[REJECTED] (or results.rejected).
         results = (
             p
-            | beam.Create([good_trip, cash, zero_seconds, no_fare])
+            | beam.Create([good_trip, cash, zero_seconds, no_fare])        # create PCollection from list of row(dicts)
             | beam.ParDo(CleanTrip()).with_outputs(REJECTED, main="valid")
         )
 
@@ -111,4 +111,4 @@ def test_clean_record_has_expected_types(good_trip):
             | beam.ParDo(CleanTrip()).with_outputs(REJECTED, main="valid")
         )
         assert_that(results.valid, check)
-        
+
