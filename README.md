@@ -1,100 +1,96 @@
-# Chicago Taxi Tips: An End-to-End ML Platform on Google Cloud
+# End-to-End ML System on Google Cloud
 
-Pruduction level implementation on END-to-END ML System for predicting whether a Chicago taxi rider will leave a generous tip (more than 20%). 
-This project focuses on building the broader ML infrastructure rather than focused model development and training. 
-The raw data is millions of trip records with missing values, duplicates, impossible trips and a hidden bias in how tips are recorded.
+A production-style machine learning system built on **Google Cloud Platform**, covering the
+full lifecycle: distributed ETL, model training, validation, deployment, and post-deployment
+monitoring against live (simulated) traffic.
 
-This repository builds the full path from raw data to a production-style ML system on
-**Google Cloud Platform**: a distributed **ETL pipeline** with **Apache Beam** and
-**Apache Spark**, followed by model training, evaluation and deployment on **Vertex AI**,
-with **CI/CD** and post-deployment evaluation.
-
-
-
-## ETL Pipeline
-
-The ETL turns ~200M raw trip records in **BigQuery** into a clean, feature-rich,
-training-ready dataset in **Cloud Storage**. Each tool is used for the job it's best at:
-
-
-BigQuery public dataset (raw trips)
-        │
-        │  Apache Beam on Dataflow
-        │  row-level validation, cleaning, deduplication, dead-letter handling
-        ▼
-GCS lake: silver/   (clean, typed Parquet)
-        │
-        │  Apache Spark on Dataproc Serverless
-        │  joins, window functions, feature engineering, time-based splits
-        ▼
-GCS lake: gold/     (training-ready dataset → Vertex AI)
-
-```
-
-**Beam for ingestion and cleaning** Cleaning is record-by-record work: validate a
-trip, fix its types, route bad records aside. Beam's model handles this naturally, scales
-automatically on Dataflow with no cluster to manage, and the same code could later process
-a live **Pub/Sub** stream instead of a batch table.
-
-**Spark for feature engineerin?** Feature engineering requires looking across many
-rows at once. Spark's DataFrame API, **window functions** and joins handle this at scale,
-and **Dataproc Serverless** runs it without provisioning a cluster.
-
-### Key finding from data exploration
-
-Exploratory analysis in **BigQuery SQL** showed that tips are only recorded for credit
-card payments. Cash trips almost always show a $0 tip because they are not entered. 
-Keeping them would teach a model that "cash means no
-tip," which is a data artifact, not behavior. The pipeline therefore keeps credit card
-trips only.
-
-
-## GCP Foundation
-
-All infrastructure is provisioned with version-controlled, re-runnable **Bash** scripts
-using the **gcloud CLI**, so the environment can be rebuilt from scratch in minutes.
-
-- **Storage architecture:** three purpose-built **Cloud Storage** buckets. A *lake* bucket
-  for pipeline data (object versioning enabled to protect against accidental overwrites),
-  a *code* bucket for deployed job artifacts, and a *temp* bucket for staging files with a
-  7-day **lifecycle rule** for automatic cleanup.
-- **Least-privilege security:** a dedicated **service account** for pipeline workers, with
-  specific **IAM roles** it needs (Dataflow worker, Dataproc worker, BigQuery job user)
-  and storage access scoped to the project's buckets rather than project-wide.
-- **Networking:** **Private Google Access** enabled so Dataproc Serverless workers, which
-  have no public IPs, can still reach BigQuery and Cloud Storage securely.
-- **Cost controls:** a project budget with email alerts, and queries that select only
-  needed columns to minimize BigQuery scan costs.
-
-
-## Repository Structure
-
-.
-├── config/
-│   └── dev.env                  # Project ID, region, bucket names, service account
-├── infra/
-│   └── scripts/
-│       ├── 00_create_buckets.sh     # Enables APIs, creates buckets, versioning, lifecycle rules
-│       └── 01_service_account.sh    # Service account, IAM roles, networking
-├── etl/
-│   ├── sql/
-│   │   └── 01_explore.sql       # Exploratory analysis: data quality, payment types, tip distribution
-│   ├── beam/                    # Apache Beam pipelines
-│   └── requirements.txt         # ETL dependencies
-└── README.md
-```
-
-Upcoming components (`training/`, `evaluation/`, `serving/`, `pipelines/`, CI/CD) will
-each live in their own folder with their own README and dependencies.
-
-
+The use case, predicting whether a Chicago taxi rider tips more than 20%. The focus is the **infrastructure and MLOps workflow**.
 
 ## Tech Stack
 
-**Data & processing:** BigQuery · SQL · Apache Beam · Google Cloud Dataflow · Apache Spark (PySpark) · Dataproc Serverless · Parquet
-**Infrastructure:** Google Cloud Storage · IAM · VPC networking · gcloud CLI · Bash
-**Development:** Python · Git · GitHub · Cloud Shell
-**Planned:** Vertex AI · Cloud Build / GitHub Actions · Cloud Composer (Airflow)
+**Data:** BigQuery · SQL · Apache Beam · Dataflow · Apache Spark · Dataproc Serverless · Parquet
+**ML:** Vertex AI Training · Model Registry · Endpoints · Model Monitoring · Pipelines (planned)
+**Infrastructure:** Cloud Storage · IAM · Pub/Sub · gcloud CLI · Bash (planned)
+**CI/CD Automation:** Python · pytest · Git · GitHub Actions (planned)
+
+
+## System Overview
+
+```
+BigQuery (raw data)
+   │  Apache Beam on Dataflow        → validation, cleaning, deduplication
+   ▼
+GCS silver/ (clean Parquet)
+   │  Apache Spark on Dataproc       → feature engineering, time-based splits
+   ▼
+GCS gold/vN (versioned training data)
+   │  Vertex AI Training             → train + validate
+   ▼
+Vertex AI Model Registry             → versioned models with data lineage
+   │
+   ▼
+Vertex AI Endpoint  ◄── Pub/Sub ◄── held-out data replayed as simulated production traffic
+   │
+   ▼
+BigQuery prediction log + ground truth → live evaluation, drift monitoring, retraining
+
+```
+
+### Key design choices
+
+- **Beam for cleaning, Spark for features:** Beam handles record-level validation and can
+  switch from batch to streaming with the same code. Spark handles cross-row work (joins,
+  window functions) at scale.
+- **Versioned, immutable datasets:** each gold dataset (`gold/v1`, `gold/v2`) is written once,
+  and every registered model records which version trained it.
+- **Held-out time window for real-world simulation:** a later period of data is excluded from training
+  and replayed through Pub/Sub, so live predictions can be scored against known ground truth.
+- **Serverless where possible:** Dataflow, Dataproc Serverless and Vertex AI.
+
+---
+
+## GCP Foundation
+
+Infrastructure is provisioned with re-runnable **Bash** scripts using the **gcloud CLI**.
+
+- **Storage:** three **Cloud Storage** buckets: a versioned data lake, a code bucket for job
+  artifacts, and a temp bucket with a 7-day lifecycle rule.
+- **Security:** a dedicated **service account** with least-privilege **IAM roles**, and
+  bucket access scoped per bucket.
+- **Networking:** **Private Google Access** so serverless workers without public IPs can reach
+  Google APIs.
+- **Cost control:** budget alerts and column-selective BigQuery queries.
+
+## ETL Pipeline
+
+**Data exploration (BigQuery SQL).** Profiling the raw data surfaced missing values,
+duplicates, impossible trips, and a recording bias: tips are only captured for card
+payments. Cash trips were excluded so the model learns real behavior, not a data artifact.
+
+**Cleaning & validation (Apache Beam), in progress.**
+- Business rules are kept separate from pipeline I/O, so they can be unit tested without GCP.
+- A `DoFn` routes each record to one of three outcomes: filtered, rejected to a
+  **dead-letter output** with the failure reasons, or emitted as a clean, typed record.
+- **Beam metrics counters** track valid, rejected and filtered rows.
+- Tested with **pytest** and Beam's `TestPipeline`.
+
+---
+
+## Repository Structure
+
+```
+.
+├── config/dev.env            # project, region, buckets, service account
+├── infra/scripts/            # bucket, IAM and networking setup
+└── etl/
+    ├── sql/                  # BigQuery exploration queries
+    ├── beam/                 # Beam pipelines and transforms
+    ├── tests/                # unit and pipeline tests
+    └── requirements.txt
+```
+
+Each future component (`training/`, `serving/`, `simulation/`, `monitoring/`, `pipelines/`)
+will live in its own folder with its own dependencies and tests.
 
 
 ## Getting Started
@@ -104,11 +100,10 @@ git clone https://github.com/<your-username>/<repo-name>.git
 cd <repo-name>
 source config/dev.env
 
-# One-time infrastructure setup (safe to re-run)
 bash infra/scripts/00_create_buckets.sh
 bash infra/scripts/01_service_account.sh
 
-# ETL environment
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r etl/requirements.txt
+pytest etl -v
 ```
