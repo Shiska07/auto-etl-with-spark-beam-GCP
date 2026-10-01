@@ -83,7 +83,39 @@ payments. Cash trips were excluded so the model learns real behavior, not a data
   BigQuery external table over the Parquet files.
 - Tested with **pytest** and Beam's `TestPipeline`.
 
-**Feature engineering (Apache Spark on Dataproc Serverless)**, next.
+**Feature engineering (Apache Spark on Dataproc Serverless)**.
+*Prediction moment.* The model predicts at the **end of the trip, at payment**, when the tip
+decision is made. A feature is allowed only if it is known at that moment and does not contain
+the tip itself.
+
+*Label.* `label = 1` if `tips / fare > 0.20`, else `0`. Defined once in `common/` so training
+and production monitoring use exactly the same rule.
+
+*Features (v1, row-level).* Each one can be computed from a single trip, so serving needs no
+extra lookups:
+
+| Group | Features | Why |
+|---|---|---|
+| Time | `hour`, `day_of_week`, `is_weekend` | Nightlife, commuter and weekend riders tip differently |
+| Trip | `trip_miles`, `trip_minutes`, `avg_speed_mph` | Tip % tends to drop on long trips; slow, congested rides affect satisfaction |
+| Cost | `fare`, `fare_per_mile`, `extras`, `tolls`, `has_extras` | Riders tip less generously on expensive or surcharged trips |
+| Place | `pickup_area`, `dropoff_area`, `is_airport`, `is_downtown`, `same_area` | Neighbourhood effects; airport and downtown riders (travellers, tourists) behave differently |
+| Operator | `company` | Companies use different payment terminals with different preset tip buttons |
+
+*How it is built.*
+- **Versioned and immutable:** output goes to `gold/taxi_tips/vN/split=train|val|test/`.
+  A version is written once; writing an existing version fails instead of overwriting it.
+- **Manifest per version (`_manifest.json`):** records lineage (source silver run, git commit),
+  the label rule and feature list, split dates, and row count and label rate per split. It is
+  written last, so a version without a manifest is incomplete.
+- **Time-based split (~80/10/10):** cut dates are computed from the data and recorded in the
+  manifest, so evaluation always uses trips that come after the training data.
+- **One feature implementation:** Spark runs the shared pandas code from `common/` via
+  `mapInPandas`; serving will call the same functions. Encodings learned from data are fitted
+  in training on the train split only.
+
+*Planned (v2).* Aggregate features (e.g. historical tip rate per area or company), which need
+point-in-time correctness and a serving-time lookup.
 
 ---
 
@@ -93,19 +125,19 @@ payments. Cash trips were excluded so the model learns real behavior, not a data
 .
 ├── config/dev.env              # project, region, buckets, service account, date windows
 ├── infra/                      # bucket, IAM and networking setup scripts
+├── common/                     # shared feature + label logic (used by Spark and serving)
+│   ├── taxi_features/
+│   ├── tests/
+│   └── pyproject.toml
 └── etl/
     ├── beam_etl/               # Beam pipeline and transforms (completed)
-    ├── spark_jobs/             # Spark feature jobs 
+    ├── spark_jobs/             # Spark job: silver → gold (features, splits, manifest)
     ├── sql_queries/            # exploration, extraction and validation SQL
-    ├── scripts/                # run scripts (local or Dataflow)
+    ├── scripts/                # run scripts (local, Dataflow or Dataproc)
     ├── tests/                  # unit and pipeline tests
     ├── setup.py                # packages beam_etl for Dataflow workers
     └── requirements.txt
 ```
-
-Each future component (`training/`, `serving/`, `simulation/`, `monitoring/`, `pipelines/`)
-will live in its own folder with its own dependencies and tests.
-
 
 ## Getting Started
 
@@ -121,9 +153,13 @@ bash infra/01_service_account.sh
 # Python environment and tests
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r etl/requirements.txt
-pytest etl -v
+pip install -e common/
+pytest common etl -v
 
 # Run the cleaning pipeline (local or on Dataflow)
 bash etl/scripts/00_run_beam_pipeline.sh 2022-01-01 2022-01-02            # local
 bash etl/scripts/00_run_beam_pipeline.sh $TRAIN_START $TRAIN_END dataflow  # Dataflow
+
+# Build a gold dataset from one silver run (local or on Dataproc Serverless)
+bash etl/scripts/01_run_spark_gold.sh <silver_run_path> v1 dataproc
 ```
