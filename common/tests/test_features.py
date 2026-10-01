@@ -1,5 +1,5 @@
 import pandas as pd
-from taxi_features.features import build_features, create_label, FEATURE_COLUMNS
+from taxi_features.features import build_features, create_label, FEATURE_COLUMNS, ID_COLUMNS
 
 
 def make_trip(**overrides):
@@ -42,4 +42,13 @@ def test_missing_area_and_company():
 def test_label_threshold():
     assert create_label(make_trip(tips=5.0, fare=20.0)).iloc[0] == 1   # 25%
     assert create_label(make_trip(tips=4.0, fare=20.0)).iloc[0] == 0   # exactly 20% → not "more than"
+
+def test_default_returns_only_features():
+    assert list(build_features(make_trip()).columns) == FEATURE_COLUMNS
+
+
+def test_keep_adds_id_columns_in_front():
+    out = build_features(make_trip(), keep=ID_COLUMNS)
+    assert list(out.columns) == ID_COLUMNS + FEATURE_COLUMNS
+    assert out["unique_key"].iloc[0] == "a1"
     

@@ -46,7 +46,10 @@ FEATURE_COLUMNS = [
     "company",
 ]
 
-def build_features(df: pd.DataFrame) -> pd.DataFrame:
+# Columns that identify a trip. Never used as model input, but needed to join
+ID_COLUMNS = ["unique_key", "trip_start_ts"]
+
+def build_features(df: pd.DataFrame, keep: list[str] | None = None):
     """Return a DataFrame with exactly FEATURE_COLUMNS, one row per input row."""
     out = pd.DataFrame(index=df.index)
 
@@ -85,8 +88,11 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     # buttons (e.g. 15/20/25%), likely a strong signal. Kept as the raw name:
     # grouping rare companies into "other" is learned from data (rule 3).
     out["company"] = df["company"].fillna("unknown").str.strip()
-
-    return out[FEATURE_COLUMNS]
+    
+    features = out[FEATURE_COLUMNS]
+    if keep:
+        return pd.concat([df[keep], features], axis=1)
+    return features
 
 
 def create_label(df: pd.DataFrame) -> pd.Series:

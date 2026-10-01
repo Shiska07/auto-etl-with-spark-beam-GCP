@@ -1,32 +1,30 @@
 """
 pipeline.py
-Beam ETL: BigQuery raw trips → clean, remove duplicates and save Parquet in the GCS lake (silver layer).
+Beam ETL: raw trips → clean, remove duplicates → Parquet in the GCS lake (silver layer).
 
-  read (BigQuery) → CleanTrip (valid / rejected) → dedupe → write Parquet + rejects JSON
+  read (sources.py: historical | live) → CleanTrip (valid / rejected) → dedupe
+  → silver Parquet + rejects JSON
 
 Run from the etl/ folder:
-  python -m beam.pipeline --start_date 2022-01-01 --end_date 2022-01-02 \
-      --lake $LAKE --project $PROJECT_ID --temp_location $TEMP/beam-local
+  python -m beam_etl.pipeline --source historical --start_date 2022-01-01 --end_date 2022-01-02 \
+      --out_lake $LAKE --project $PROJECT_ID --temp_location $TEMP/beam-local
+  python -m beam_etl.pipeline --source live --start_date 2022-04-01 --end_date 2022-04-08 \
+      --out_lake $LAKE --project $PROJECT_ID --temp_location $TEMP/beam-local
 """
 
-import json
 import argparse
-import datetime
+import json
 import logging
-from pathlib import Path
-from datetime import datetime, timezone
-from datetime import date
+from datetime import date, datetime, timezone
 
-import pyarrow as pa
 import apache_beam as beam
-from apache_beam.options.pipeline_options import PipelineOptions, GoogleCloudOptions
+import pyarrow as pa
+from apache_beam.options.pipeline_options import GoogleCloudOptions, PipelineOptions
 
-from beam_etl.transforms import CleanTrip, REJECTED
+from beam_etl.sources import SOURCES
+from beam_etl.transforms import REJECTED, CleanTrip
 
-
-SQL_DIR = Path(__file__).resolve().parent.parent / "sql_queries" 
-
-# Schema or cleaned parquet file, must match schema returned by transforms.py CleanTrip(beam.Dofn)
+# Schema of the cleaned Parquet files; must match what CleanTrip emits
 SILVER_SCHEMA = pa.schema([
     ("unique_key", pa.string()),
     ("taxi_id", pa.string()),
@@ -42,7 +40,7 @@ SILVER_SCHEMA = pa.schema([
     ("company", pa.string()),
 ])
 
-# helpers
+
 def valid_date(s: str) -> date:
     try:
         return date.fromisoformat(s)          # "2022-01-01" → date(2022, 1, 1)
@@ -51,78 +49,77 @@ def valid_date(s: str) -> date:
 
 
 def keep_first(key_and_rows):
-    """After grouping by unique_key (key, Iterable[raw]), keep a single row per trip."""
+    """After grouping by unique_key (key, Iterable[row]), keep a single row per trip."""
     _key, rows = key_and_rows
     return next(iter(rows))
 
 
 def run(argv=None):
     parser = argparse.ArgumentParser()
+    parser.add_argument("--source", choices=SOURCES.keys(), default="historical",
+                        help="historical = BigQuery public table, live = landing files")
     parser.add_argument("--start_date", type=valid_date, required=True, help="YYYY-MM-DD, inclusive")
     parser.add_argument("--end_date", type=valid_date, required=True, help="YYYY-MM-DD, exclusive")
     parser.add_argument("--out_lake", required=True, help="Lake bucket, e.g. gs://<project>-lake")
-    parser.add_argument("--query_file", default="02_load_table.sql",
-                    help="SQL file name inside sql_queries/")
+    parser.add_argument("--run_ts", default=None,
+                        help="UTC run timestamp YYYYMMDD-HHMMSS; generated if not given")
 
     # parse_known_args: our args go to `args`; everything else (--project, --runner, ...) goes to Beam
     args, beam_args = parser.parse_known_args(argv)
 
-
-    # load query
     if args.start_date >= args.end_date:
         parser.error("--start_date must be before --end_date")
-    
-    query = (SQL_DIR / args.query_file).read_text().format(start_date=args.start_date, end_date=args.end_date)
-    load_date = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
 
-    # bucket paths
-    run_id = run_id = f"{args.start_date}_{args.end_date}_{load_date}"
-    silver_dir = f"{args.out_lake}/silver/trips/run_id={run_id}"
-    rejects_dir = f"{args.out_lake}/rejected/trips/run_id={run_id}"
+    reader, dataset = SOURCES[args.source]
 
-    options=PipelineOptions(beam_args)
+    # output paths: one immutable folder per run
+    run_ts = args.run_ts or datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    run_id = f"{args.start_date}_{args.end_date}_{run_ts}"
+    silver_dir = f"{args.out_lake}/silver/{dataset}/run_id={run_id}"
+    rejects_dir = f"{args.out_lake}/rejected/{dataset}/run_id={run_id}"
+    print(f">> Source:  {args.source}")
+    print(f">> Silver:  {silver_dir}")
+    print(f">> Rejects: {rejects_dir}")
 
-    # add job name here (this is required for dataflow service)
+    options = PipelineOptions(beam_args)
+
+    # job name (Dataflow needs a unique one; lowercase letters, digits and hyphens only)
     gcp = options.view_as(GoogleCloudOptions)
     if not gcp.job_name:
-        gcp.job_name = f"taxi-clean-{run_id.replace('_', '-')}"
+        gcp.job_name = f"taxi-clean-{args.source}-{run_id.replace('_', '-')}"
 
     with beam.Pipeline(options=options) as p:
 
-        # load raw data
-        raw = p | "ReadBigQuery" >> beam.io.ReadFromBigQuery(query=query, use_standard_sql=True)
+        # read: the only source-specific step
+        raw = reader(p, args)
 
         # validate and clean
         cleaned = raw | "CleanTrip" >> beam.ParDo(CleanTrip()).with_outputs(REJECTED, main="valid")
 
         # remove duplicates
         deduped = (
-            cleaned.valid                                                     # PCollection of rows as dicts
-            | "KeyByTripID" >> beam.Map(lambda r: (r["unique_key"], r))     # PCollection of tuples (unique_key, row dict)
-            | "GroupByKey"  >> beam.GroupByKey()                            # PCollection of tuples (unique_key, Iterable[rows with the same unique_key])
-            | "KeepFirst"  >> beam.Map(keep_first)                          # PCollection of rows as dicts: the first item from Iterable[rows with the same unique_key] 
+            cleaned.valid                                                  # rows as dicts
+            | "KeyByTripID" >> beam.Map(lambda r: (r["unique_key"], r))    # (unique_key, row)
+            | "GroupByKey"  >> beam.GroupByKey()                           # (unique_key, Iterable[row])
+            | "KeepFirst"   >> beam.Map(keep_first)                        # one row per trip
         )
 
         # write clean data
         deduped | "WriteSilver" >> beam.io.WriteToParquet(
             file_path_prefix=f"{silver_dir}/part",
             schema=SILVER_SCHEMA,
-            file_name_suffix='.parquet'
+            file_name_suffix=".parquet",
         )
 
         # write rejected data as json lines
-        {
-            cleaned[REJECTED]
-            | "RejectsToJson" >> beam.Map(json.dumps)
-            | "WriteRejects" >> beam.io.WriteToText(
-                file_path_prefix=f"{rejects_dir}/part",
-                file_name_suffix='.jsonl'
-            )
-        }
+        (cleaned[REJECTED]
+         | "RejectsToJson" >> beam.Map(json.dumps, default=str)
+         | "WriteRejects"  >> beam.io.WriteToText(
+               file_path_prefix=f"{rejects_dir}/part",
+               file_name_suffix=".jsonl",
+           ))
 
 
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.INFO)
     run()
-
-    

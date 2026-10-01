@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 import pandas as pd
 from pyspark.sql import SparkSession, functions as F
 
-from taxi_features.features import FEATURE_COLUMNS, build_features, create_label, TIP_THRESHOLD
+from taxi_features.features import FEATURE_COLUMNS, ID_COLUMNS, build_features, create_label, TIP_THRESHOLD
 
 # Output schema for mapInPandas: one (name, Spark type) per column.
 GOLD_COLUMNS = [
@@ -75,8 +75,7 @@ def to_gold(batches: Iterator[pd.DataFrame]) -> Iterator[pd.DataFrame]:
     For each batch of dataframes, get the ourput dataframes with additional engineered features.
     """
     for pdf in batches:
-        features = build_features(pdf)
-        out = pd.concat([pdf[KEY_COLUMNS], features], axis=1)
+        out = build_features(pdf, keep=ID_COLUMNS+["split"])
         out["label"]= create_label(pdf)
         yield out
 
