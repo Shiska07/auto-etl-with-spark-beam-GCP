@@ -1,0 +1,8 @@
+# Not needed to build the Beam launcher image
+spark_jobs/
+tests/
+examples/
+scripts/
+__pycache__/
+*.pyc
+.pytest_cache/

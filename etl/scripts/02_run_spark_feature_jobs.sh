@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# 01_run_spark_feature_jobs.sh
+# 02_run_spark_feature_jobs.sh
 # Runs spark feature engineering pipeline on silver data w/ schema post beam processing
-# Usage:   bash etl/scripts/01_run_spark_feature_jobs.sh SILVER_PATH VERSION
-# Example: bash etl/scripts/01_run_spark_feature_jobs.sh "$LAKE/silver/trips/run_id=<id>" v1
+# Usage:   bash etl/scripts/02_run_spark_feature_jobs.sh SILVER_PATH VERSION
+# Example: bash etl/scripts/02_run_spark_feature_jobs.sh "$LAKE/silver/trips/run_id=<id>" v1
 # Optional: VAL_FRAC=0.15 TEST_FRAC=0.15 bash ...   (defaults: 0.10 / 0.10)
 set -euo pipefail
 

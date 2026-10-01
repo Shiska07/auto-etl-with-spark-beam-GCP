@@ -1,0 +1,38 @@
+{
+  "name": "clean-trips",
+  "description": "Cleans raw Chicago taxi trips (historical BigQuery data or landed live data) into the silver layer.",
+  "parameters": [
+    {
+      "name": "source",
+      "label": "Source",
+      "helpText": "historical (BigQuery public table) or live (landing files). Default: historical.",
+      "isOptional": true,
+      "regexes": ["^(historical|live)$"]
+    },
+    {
+      "name": "start_date",
+      "label": "Start date",
+      "helpText": "First day to process, inclusive (YYYY-MM-DD).",
+      "regexes": ["^\\d{4}-\\d{2}-\\d{2}$"]
+    },
+    {
+      "name": "end_date",
+      "label": "End date",
+      "helpText": "Day after the last day to process, exclusive (YYYY-MM-DD).",
+      "regexes": ["^\\d{4}-\\d{2}-\\d{2}$"]
+    },
+    {
+      "name": "out_lake",
+      "label": "Lake bucket",
+      "helpText": "Lake bucket, e.g. gs://chicago-taxi-tips-project-lake",
+      "regexes": ["^gs://.+"]
+    },
+    {
+      "name": "run_ts",
+      "label": "Run timestamp",
+      "helpText": "Optional UTC run timestamp YYYYMMDD-HHMMSS; generated if empty.",
+      "isOptional": true,
+      "regexes": ["^\\d{8}-\\d{6}$"]
+    }
+  ]
+}
