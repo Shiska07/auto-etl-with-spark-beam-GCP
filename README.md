@@ -143,7 +143,7 @@ point-in-time correctness and a serving-time lookup.
 
 ```bash
 git clone https://github.com/Shiska07/distributed-ml-system-gcp.git
-cd gcp-mlops-tabular
+cd distributed-ml-system-gcp.git
 source config/dev.env
 
 # One-time infrastructure setup
@@ -157,9 +157,8 @@ pip install -e common/
 pytest common etl -v
 
 # Run the cleaning pipeline (local or on Dataflow)
-bash etl/scripts/00_run_beam_pipeline.sh 2022-01-01 2022-01-02             # local
-bash etl/scripts/00_run_beam_pipeline.sh $TRAIN_START $TRAIN_END dataflow  # Dataflow
+bash etl/scripts/00_run_beam_pipeline.sh $TRAIN_START $TRAIN_END
 
 # Build a gold dataset from one silver run (local or on Dataproc Serverless)
-bash etl/scripts/01_run_spark_gold.sh <silver_run_path> v1 dataproc
+bash etl/scripts/01_run_spark_feature_jobs.sh <silver_run_path>
 ```
