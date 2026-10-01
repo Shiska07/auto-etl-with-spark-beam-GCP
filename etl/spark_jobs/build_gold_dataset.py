@@ -76,7 +76,7 @@ def to_gold(batches: Iterator[pd.DataFrame]) -> Iterator[pd.DataFrame]:
     """
     for pdf in batches:
         features = build_features(pdf)
-        out = pd.concat(pdf[KEY_COLUMNS], features, axis=1)
+        out = pd.concat([pdf[KEY_COLUMNS], features], axis=1)
         out["label"]= create_label(pdf)
         yield out
 
@@ -106,6 +106,9 @@ def main() -> None:
                    help="Parent folder for gold versions, e.g. gs://…-lake/gold/taxi_tips")
     p.add_argument("--version", required=True,
                    help="Gold version name, e.g. v1 (written once, never overwritten)")
+        # Lineage
+    p.add_argument("--git_commit", default="unknown",
+                   help="Code version that built this dataset (recorded in the manifest)")
 
     # Split sizes: oldest rows → train, then val, newest → test
     p.add_argument("--val_frac",  type=float, default=0.10)
@@ -113,7 +116,7 @@ def main() -> None:
     args = p.parse_args()
 
     # make sure test and val fractions are valid
-    if not 0 < args.val_frac + args.test_trac < 1:
+    if not 0 < args.val_frac + args.test_frac < 1:
         raise ValueError("val_frac + test_frac must be between 0 and 1")
 
     # ------------------------- START SPARK -----------------------------
@@ -123,11 +126,14 @@ def main() -> None:
 
     # read silver parquet file
     silver: DataFrame = spark.read.parquet(args.silver_path)
-    
 
+    # Beam wrote timestamps without a time zone (TIMESTAMP_NTZ). Convert to a regular
+    # TIMESTAMP; with the session time zone set to UTC above, the values stay unchanged.
+    silver = silver.withColumn("trip_start_ts", F.col("trip_start_ts").cast("timestamp"))
+    
     # -------------------------- SPLIT DATA -------------------------------
     # find split boundaries from data for validation and testing
-    val_start, test_start = compute_split_dates(silver. args.val_frac, args.test_frac)
+    val_start, test_start = compute_split_dates(silver, args.val_frac, args.test_frac)
     print(f">> Split dates: val from {val_start}, test from {test_start}")
 
     # A reference to the column (no data yet)
@@ -156,7 +162,7 @@ def main() -> None:
     out_path: str = f"{args.gold_root}/{args.version}"
     (gold.write
         .mode("errorifexists")    # don't overwrite, throw error if exists
-        .partitionBay("split")    # split by colun named "split" split=train/ ... split=val/ ... split=test/
+        .partitionBy("split")    # split by colun named "split" split=train/ ... split=val/ ... split=test/
         .parquet(out_path))       # save as parquet file
 
     # ------------------------------ LOGGING ---------------------------------:
@@ -215,7 +221,7 @@ def main() -> None:
     # conver to json text
     manifest_test = json.dumps(manifest, indent=2)
     write_text(spark, path=f"{out_path}/_manifest.json", text=manifest_test)
-    print(json.dumps(manifest, indent=2))
+    print(manifest_test)
 
     spark.stop()
 
