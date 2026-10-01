@@ -9,8 +9,6 @@ The use case is predicting whether a Chicago taxi rider tips more than 20%. The 
 
 ## Tech Stack
 
-## Tech Stack
-
 - **Data:** BigQuery · SQL · Apache Beam · Dataflow · Apache Spark · Dataproc Serverless · Parquet
 - **ML:** Vertex AI Training · Model Registry · Endpoints · Model Monitoring · Pipelines 
 - **Infrastructure:** Cloud Storage · IAM · gcloud CLI · Bash · Pub/Sub 
