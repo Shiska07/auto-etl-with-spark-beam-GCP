@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 00_seed_landing.sh
+# 00_seed_landing_batched.sh
 # Seeds bronze landing data for the holdout window, split into what production
 # would receive: trip requests (no tip) and ground truth (tip arrives later).
 # Usage: bash simulation/00_seed_landing.sh

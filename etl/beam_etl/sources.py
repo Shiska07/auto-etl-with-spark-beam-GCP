@@ -30,7 +30,7 @@ def read_historical(p, args):
     return p | "ReadBigQuery" >> beam.io.ReadFromBigQuery(query=query, use_standard_sql=True)
 
 
-# ----------------------------- LIVE ------------------------------------------
+# ----------------------------- SIMULATED LIVE (BATCHED) ------------------------------------------
 
 def landing_paths(lake: str, folder: str, start: date, end: date) -> list[str]:
     """One glob per day in [start, end), e.g. …/landing/live_trips/event_date=2022-04-01/*.json"""
