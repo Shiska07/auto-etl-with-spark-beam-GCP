@@ -9,10 +9,12 @@ The use case is predicting whether a Chicago taxi rider tips more than 20%. The 
 
 ## Tech Stack
 
-**Data:** BigQuery · SQL · Apache Beam · Dataflow · Apache Spark · Dataproc Serverless · Parquet
-**ML:** Vertex AI Training · Model Registry · Endpoints · Model Monitoring · Pipelines (planned)
-**Infrastructure:** Cloud Storage · IAM · gcloud CLI · Bash · Pub/Sub (planned)
-**CI/CD Automation:** Python · pytest · Git · GitHub Actions (planned)
+## Tech Stack
+
+- **Data:** BigQuery · SQL · Apache Beam · Dataflow · Apache Spark · Dataproc Serverless · Parquet
+- **ML:** Vertex AI Training · Model Registry · Endpoints · Model Monitoring · Pipelines 
+- **Infrastructure:** Cloud Storage · IAM · gcloud CLI · Bash · Pub/Sub 
+- **CI/CD Automation:** Python · pytest · Git · GitHub Actions 
 
 
 ## System Overview
@@ -43,7 +45,7 @@ BigQuery prediction log + ground truth → live evaluation, drift monitoring, re
   window functions) at scale.
 - **Versioned, immutable datasets:** every pipeline run writes to its own folder and is never
   overwritten. Each gold dataset (`gold/v1`, `gold/v2`) records the silver run it was built
-  from, and every registered model records which gold version trained it.
+  from, and every registered model records which gold version trained it with manifest files.
 - **Held-out time window for real-world simulation:** a later period of data is excluded from
   training and replayed through Pub/Sub, so live predictions can be scored against known
   ground truth.
@@ -142,7 +144,7 @@ point-in-time correctness and a serving-time lookup.
 ## Getting Started
 
 ```bash
-git clone https://github.com/Shiska07/gcp-mlops-tabular.git
+git clone https://github.com/Shiska07/distributed-ml-system-gcp.git
 cd gcp-mlops-tabular
 source config/dev.env
 
@@ -157,7 +159,7 @@ pip install -e common/
 pytest common etl -v
 
 # Run the cleaning pipeline (local or on Dataflow)
-bash etl/scripts/00_run_beam_pipeline.sh 2022-01-01 2022-01-02            # local
+bash etl/scripts/00_run_beam_pipeline.sh 2022-01-01 2022-01-02             # local
 bash etl/scripts/00_run_beam_pipeline.sh $TRAIN_START $TRAIN_END dataflow  # Dataflow
 
 # Build a gold dataset from one silver run (local or on Dataproc Serverless)
